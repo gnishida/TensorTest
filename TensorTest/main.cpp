@@ -122,28 +122,51 @@ int generateRoadSegmentByTensor(const cv::Mat& tensor, double segment_length, do
 			break;
 		}
 
-		double angle = tensor.at<double>(r, c);
+		/////////////////////////////////////////////////////////////////////
+		// use Runge-Kutta 4 to obtain the next angle
+		double angle1 = tensor.at<double>(r, c);		
+		if (type == 2) angle1 += M_PI / 2;	// minor eigen vectorならPI/2を足す
 
-		// minor eigen vectorならPI/2を足す
-		if (type == 2) angle += M_PI / 2;
-
-		// Runge-Kutta 2nd orderを使用するため、half step先のangleを取得する
-		glm::vec2 pt_half = pt + glm::dvec2(cos(angle), sin(angle)) * (step_length * 0.5 * dir);
-		int c_h = pt_half.x + tensor.cols / 2;
-		int r_h = pt_half.y + tensor.rows / 2;
-		if (c_h >= 0 && c_h < tensor.cols && r_h >= 0 && r_h < tensor.rows) {
-			angle = tensor.at<double>(r_h, c_h);
-			// minor eigen vectorならPI/2を足す
-			if (type == 2) angle += M_PI / 2;
+		// angle2
+		glm::vec2 pt2 = pt + glm::dvec2(cos(angle1), sin(angle1)) * (step_length * 0.5 * dir);
+		int c2 = pt2.x + tensor.cols / 2;
+		int r2 = pt2.y + tensor.rows / 2;
+		double angle2 = angle1;
+		if (c2 >= 0 && c2 < tensor.cols && r2 >= 0 && r2 < tensor.rows) {
+			angle2 = tensor.at<double>(r2, c2);
+			if (type == 2) angle2 += M_PI / 2;	// minor eigen vectorならPI/2を足す
 		}
 
+		// angle3
+		glm::vec2 pt3 = pt + glm::dvec2(cos(angle2), sin(angle2)) * (step_length * 0.5 * dir);
+		int c3 = pt3.x + tensor.cols / 2;
+		int r3 = pt3.y + tensor.rows / 2;
+		double angle3 = angle2;
+		if (c3 >= 0 && c3 < tensor.cols && r3 >= 0 && r3 < tensor.rows) {
+			angle3 = tensor.at<double>(r3, c3);
+			if (type == 2) angle3 += M_PI / 2;	// minor eigen vectorならPI/2を足す
+		}
+
+		// angle4
+		glm::vec2 pt4 = pt + glm::dvec2(cos(angle3), sin(angle3)) * (step_length * dir);
+		int c4 = pt4.x + tensor.cols / 2;
+		int r4 = pt4.y + tensor.rows / 2;
+		double angle4 = angle3;
+		if (c4 >= 0 && c4 < tensor.cols && r4 >= 0 && r4 < tensor.rows) {
+			angle4 = tensor.at<double>(r4, c4);
+			if (type == 2) angle4 += M_PI / 2;	// minor eigen vectorならPI/2を足す
+		}
+
+		// RK4によりangleを計算
+		double angle = angle1 / 6.0 + angle2 / 3.0 + angle3 / 3.0 + angle4 / 6.0;
+
 		// 次のステップの座標を求める
-		glm::vec2 pt2 = pt + glm::dvec2(cos(angle), sin(angle)) * (step_length * dir);
+		glm::vec2 next_pt = pt + glm::dvec2(cos(angle), sin(angle)) * (step_length * dir);
 
 		// 交差点を求める
 		for (int k = 0; k < edges.size(); ++k) {
 			glm::dvec2 intPt;
-			if (isIntersect(edges[k].first, edges[k].second, pt, pt2, intPt)) {
+			if (isIntersect(edges[k].first, edges[k].second, pt, next_pt, intPt)) {
 				new_vertices.push_back(std::make_pair(intPt, 3));
 
 				// 既に近くに頂点がないかチェック
@@ -152,7 +175,7 @@ int generateRoadSegmentByTensor(const cv::Mat& tensor, double segment_length, do
 					// major vector と minor vectorで異なる場合は、チェックしない
 					if (!(vertices[k].second & type)) continue;
 
-					if (glm::length(vertices[k].first - pt) < near_threshold) {
+					if (glm::length(vertices[k].first - intPt) < near_threshold) {
 						near = true;
 						break;
 					}
@@ -160,7 +183,7 @@ int generateRoadSegmentByTensor(const cv::Mat& tensor, double segment_length, do
 
 				if (near) {
 					// 道路セグメントの生成を交差点でストップさせる
-					pt2 = intPt;
+					next_pt = intPt;
 					i = num_step;
 					result = 2;
 					break;
@@ -168,9 +191,9 @@ int generateRoadSegmentByTensor(const cv::Mat& tensor, double segment_length, do
 			}
 		}
 
-		edges.push_back(std::make_pair(pt, pt2));
+		edges.push_back(std::make_pair(pt, next_pt));
 
-		pt = pt2;
+		pt = next_pt;
 	}
 
 	return result;
@@ -339,8 +362,7 @@ void test(int size, double segment_length, double angle, double curvature, const
 	regular_elements.push_back(std::make_pair(glm::dvec2(0, 0), angle));
 	growRoads(size, angle, glm::vec2(0, 0), curvature, segment_length, regular_elements, vertices, edges);
 	growRoads(size, angle, glm::vec2(0, 0), curvature, -segment_length, regular_elements, vertices, edges);
-
-	saveRoadImage(size, vertices, edges, "initial.png", false, false);
+	//saveRoadImage(size, vertices, edges, "initial.png", false, false);
 
 	// setup the tensor field
 	cv::Mat tensor(size, size, CV_64F);
@@ -365,12 +387,10 @@ void test(int size, double segment_length, double angle, double curvature, const
 			tensor.at<double>(r, c) = avg_angle;
 		}
 	}
-
-	// visualize the tensor field
-	saveTensorImage(tensor, "tensor.png");
+	//saveTensorImage(tensor, "tensor.png");
 
 	// generate roads
-	generateRoadsByTensor(tensor, segment_length, segment_length * 0.8, vertices, edges);
+	generateRoadsByTensor(tensor, segment_length, segment_length * 0.7, vertices, edges);
 
 	// visualize the roads
 	saveRoadImage(size, vertices, edges, filename, false, false);
@@ -379,14 +399,18 @@ void test(int size, double segment_length, double angle, double curvature, const
 int main() {
 	int size = 1000;
 
-	//srand(12);
-	//test(size, 80, 0.0, 0.1, "result1.png");
-	//srand(12345);
-	//test(size, 80, 0.3, 0.2, "result2.png");
-	//srand(1234578);
-	//test(size, 80, 0.6, 0.15, "result3.png");
+	srand(12);
+	test(size, 80, 0.0, 0.1, "result1.png");
+	srand(12345);
+	test(size, 80, 0.3, 0.2, "result2.png");
+	srand(1234578);
+	test(size, 80, 0.6, 0.15, "result3.png");
 	srand(125);
 	test(size, 80, 0.2, 0.3, "result4.png");
+	srand(5213);
+	test(size, 80, 0.75, 0.1, "result5.png");
+	srand(2352);
+	test(size, 80, 0.45, 0.0, "result6.png");
 
 	return 0;
 }
