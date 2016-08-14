@@ -267,6 +267,23 @@ void generateRoadsByTensor(const cv::Mat& tensor, double segment_length, double 
 
 }
 
+void saveTensorImage(const cv::Mat& tensor, const std::string& filename) {
+	cv::Mat result(tensor.size(), CV_8U, cv::Scalar(255));
+	for (int r = 0; r < tensor.rows; r += 50) {
+		for (int c = 0; c < tensor.cols; c += 50) {
+			int x1 = c;
+			int y1 = r;
+			double angle = tensor.at<double>(r, c);
+			int x2 = x1 + cos(angle) * 30;
+			int y2 = y1 + sin(angle) * 30;
+			cv::line(result, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(0), 1, cv::LINE_AA);
+		}
+	}
+
+	cv::flip(result, result, 0);
+	cv::imwrite(filename.c_str(), result);
+}
+
 void saveRoadImage(int size, const std::vector<std::pair<glm::dvec2, int>>& vertices, const std::vector<std::pair<glm::dvec2, glm::dvec2>>& edges, const std::string& filename, bool showVertices, bool showArrow) {
 	cv::Mat result(size, size, CV_8UC3, cv::Scalar(255, 255, 255));
 	for (int i = 0; i < edges.size(); ++i) {
@@ -323,6 +340,8 @@ void test(int size, double segment_length, double angle, double curvature, const
 	growRoads(size, angle, glm::vec2(0, 0), curvature, segment_length, regular_elements, vertices, edges);
 	growRoads(size, angle, glm::vec2(0, 0), curvature, -segment_length, regular_elements, vertices, edges);
 
+	saveRoadImage(size, vertices, edges, "initial.png", false, false);
+
 	// setup the tensor field
 	cv::Mat tensor(size, size, CV_64F);
 	for (int r = 0; r < tensor.rows; ++r) {
@@ -347,6 +366,9 @@ void test(int size, double segment_length, double angle, double curvature, const
 		}
 	}
 
+	// visualize the tensor field
+	saveTensorImage(tensor, "tensor.png");
+
 	// generate roads
 	generateRoadsByTensor(tensor, segment_length, segment_length * 0.8, vertices, edges);
 
@@ -357,14 +379,14 @@ void test(int size, double segment_length, double angle, double curvature, const
 int main() {
 	int size = 1000;
 
-	srand(12);
-	test(size, 80, 0.0, 0.1, "result1.png");
-	srand(12345);
-	test(size, 80, 0.0, 0.1, "result2.png");
-	srand(1234578);
-	test(size, 80, 0.0, 0.1, "result3.png");
+	//srand(12);
+	//test(size, 80, 0.0, 0.1, "result1.png");
+	//srand(12345);
+	//test(size, 80, 0.3, 0.2, "result2.png");
+	//srand(1234578);
+	//test(size, 80, 0.6, 0.15, "result3.png");
 	srand(125);
-	test(size, 80, 0.0, 0.1, "result4.png");
+	test(size, 80, 0.2, 0.3, "result4.png");
 
 	return 0;
 }
